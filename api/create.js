@@ -1,39 +1,45 @@
-// 文件路径：api/create.js (卖家生成订单专用)
 export default async function handler(req, res) {
-    // 你的管理员密码，防止别人乱造链接，你可以自己改！
+    // 你的管理员密码
     const ADMIN_PASSWORD = 'admin'; 
     const pass = req.query.pass;
-    const service = req.query.service || 'dr'; // 默认生成 ChatGPT 订单
+    const service = req.query.service || 'dr'; // dr 或 acz
+    
+    // 新增：读取你要生成的数量，默认是 1 个
+    let count = parseInt(req.query.count) || 1; 
 
     if (pass !== ADMIN_PASSWORD) {
-        return res.status(401).json({ error: '密码错误，无权生成链接' });
+        return res.status(401).send('密码错误，无权生成链接');
     }
 
-    // 生成一个随机的订单号，如 ord_7a8b9c
-    const orderId = 'ord_' + Math.random().toString(36).substr(2, 8);
+    // 限制单次最多生成 100 个，防止数据库请求过多导致超时报错
+    if (count > 100) count = 100;
 
-    // 初始订单状态
-    const orderData = {
-        status: 'NEW',        // NEW(未使用), PENDING(等验证码), COMPLETED(已完成)
-        service: service,     // dr 或 acz
-        grizzly_id: null,     // 平台任务ID
-        phone: null,          // 手机号
-        code: null            // 验证码
-    };
-
-    // 将订单存入 Vercel KV 数据库
-    await fetch(process.env.KV_REST_API_URL, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}` },
-        body: JSON.stringify(['SET', orderId, JSON.stringify(orderData)])
-    });
-
-    // 假设你的 Vercel 域名是 my-sms-platform.vercel.app，你可以把这个域名换成你自己的
     const host = req.headers.host;
-    const link = `https://${host}/?order=${orderId}`;
+    let links = [];
 
-    return res.status(200).json({ 
-        message: '订单生成成功！请将下方链接发给客户：',
-        link: link
-    });
+    // 循环生成指定数量的订单
+    for (let i = 0; i < count; i++) {
+        const orderId = 'ord_' + Math.random().toString(36).substr(2, 8);
+        const orderData = {
+            status: 'NEW',
+            service: service,
+            grizzly_id: null,
+            phone: null,
+            code: null
+        };
+
+        // 存入 Vercel KV 数据库
+        await fetch(process.env.KV_REST_API_URL, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}` },
+            body: JSON.stringify(['SET', orderId, JSON.stringify(orderData)])
+        });
+
+        // 拼接好专属链接，放进数组里
+        links.push(`https://${host}/?order=${orderId}`);
+    }
+
+    // 【关键修改】将返回格式改为“纯文本”，每行一个链接，方便你直接复制
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    return res.status(200).send(links.join('\n'));
 }
