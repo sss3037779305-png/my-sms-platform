@@ -15,9 +15,10 @@
         .status { margin-top: 15px; color: #666; font-size: 14px; }
         .error-screen { color: red; font-weight: bold; margin-top: 50px; font-size: 18px; }
         
-        /* 新增：换号按钮的动态样式 */
         .btn-change { background: #f0ad4e; color: white; border: none; padding: 12px 20px; font-size: 15px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 5px; font-weight: bold; transition: 0.3s;}
         .btn-change:disabled { background: #e0e0e0; color: #888; cursor: not-allowed; }
+        /* 新增：提示文字的样式 */
+        .hint-text { font-size: 12px; color: #888; margin-top: 10px; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -32,8 +33,11 @@
         
         <div class="countdown-display" id="countdownBox"></div>
         
-        <!-- 换号按钮：默认隐藏 -->
         <button class="btn-change" id="changeBtn" style="display: none;" onclick="changeNumber()">正在计算...</button>
+        <!-- 新增：换号规则提示，默认隐藏 -->
+        <div class="hint-text" id="changeHint" style="display: none;">
+            💡 提示：当号码被风控或3分钟内未接收到验证码时，可点击申请换号
+        </div>
     </div>
 
     <div class="box">
@@ -68,7 +72,6 @@
         }
     }
 
-    // 抽离出来的通用处理函数，初次获取和换号后都能用
     function handleNumberResponse(data) {
         if (data.success) {
             const countryName = data.service === 'dr' ? '归属地：美国 (+1)' : '归属地：哥伦比亚 (+57)';
@@ -83,6 +86,7 @@
             if (data.status === 'COMPLETED') {
                 document.getElementById('countdownBox').innerText = '✅ 订单已完成';
                 document.getElementById('changeBtn').style.display = 'none';
+                document.getElementById('changeHint').style.display = 'none';
                 checkCode(); 
             } else {
                 document.getElementById('statusBox').innerText = '正在等待接收验证码... (请在APP中发送)';
@@ -102,17 +106,19 @@
         if (countdownInterval) clearInterval(countdownInterval);
         const countdownBox = document.getElementById('countdownBox');
         const changeBtn = document.getElementById('changeBtn');
-        changeBtn.style.display = 'block'; // 显示按钮
+        const changeHint = document.getElementById('changeHint');
+        
+        changeBtn.style.display = 'block'; 
+        changeHint.style.display = 'block'; // 显示提示文字
         
         if (!createdAt) createdAt = Date.now(); 
         
         countdownInterval = setInterval(() => {
             let elapsed = Math.floor((Date.now() - createdAt) / 1000);
-            let timeLeft = 1200 - elapsed; // 20分钟总过期倒计时
-            let cooldownLeft = 300 - elapsed; // 5分钟防刷冷却倒计时
+            let timeLeft = 1200 - elapsed; 
+            let cooldownLeft = 180 - elapsed; // 【关键修改】3分钟 = 180秒防刷冷却
 
             if (timeLeft <= 0) {
-                // 【20分钟超时】
                 clearInterval(countdownInterval);
                 if (checkInterval) clearInterval(checkInterval);
                 countdownBox.innerText = '⚠️ 号码已过期';
@@ -125,17 +131,15 @@
                 changeBtn.disabled = false;
                 changeBtn.style.backgroundColor = '#007bff';
                 changeBtn.style.color = '#fff';
+                changeHint.style.display = 'none'; // 超时后隐藏提示文字，使界面简洁
             } else {
-                // 【正常倒计时】
                 let m = Math.floor(timeLeft / 60);
                 let s = timeLeft % 60;
                 countdownBox.innerText = `号码有效期：${m}分${s}秒`;
                 
-                // 恢复默认字体颜色
                 document.getElementById('statusBox').style.color = '#666';
                 document.getElementById('statusBox').style.fontWeight = 'normal';
 
-                // 【5分钟冷却判断】
                 if (cooldownLeft > 0) {
                     let cm = Math.floor(cooldownLeft / 60);
                     let cs = cooldownLeft % 60;
@@ -153,7 +157,6 @@
         }, 1000);
     }
 
-    // 【新增】用户手动点击换号按钮的逻辑
     async function changeNumber() {
         const changeBtn = document.getElementById('changeBtn');
         changeBtn.disabled = true;
@@ -161,15 +164,14 @@
         document.getElementById('statusBox').innerText = '正在与服务器通信为您更换号码...';
 
         try {
-            // 加上 change=true 的参数
             const res = await fetch(`/api/getNumber?order=${orderId}&change=true`);
             const data = await res.json();
             
             if (data.success) {
-                handleNumberResponse(data); // 复用渲染逻辑
+                handleNumberResponse(data); 
             } else {
                 alert('换号失败: ' + data.error);
-                startTask(); // 失败则重新拉取同步当前状态
+                startTask(); 
             }
         } catch (err) {
             alert('网络请求失败');
@@ -191,7 +193,8 @@
                     clearInterval(countdownInterval);
                     document.getElementById('countdownBox').innerText = '✅ 订单已完成';
                 }
-                document.getElementById('changeBtn').style.display = 'none'; // 收到验证码彻底隐藏换号按钮
+                document.getElementById('changeBtn').style.display = 'none'; 
+                document.getElementById('changeHint').style.display = 'none'; // 收到验证码后隐藏所有多余元素
             } else {
                 document.getElementById('statusBox').innerText = '正在等待接收验证码... (请确保已在APP中发送)';
             }
