@@ -16,20 +16,33 @@ export default async function handler(req, res) {
         
         let orderData = JSON.parse(kvData.result);
 
-        // 如果已经在等验证码，把之前保存的时间戳传给前端（保证刷新不断）
+        // 【终极防错1】强制转换格式，绝对不再报 .trim() 的错误，也不会认错国家！
+        let rawService = orderData.service;
+        if (Array.isArray(rawService)) rawService = rawService[0]; // 防止被变成数组
+        const service = (String(rawService).trim() === 'acz') ? 'acz' : 'dr';
+        const country = (service === 'dr') ? '187' : '33';
+
+        // 【终极防错2】修复刷新重置倒计时的问题
         if (orderData.status === 'PENDING' || orderData.status === 'COMPLETED') {
+            // 如果老订单没有时间戳，给它补上一个，下次刷新就不会重置了
+            if (!orderData.created_at) {
+                orderData.created_at = Date.now();
+                await fetch(process.env.KV_REST_API_URL, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}` },
+                    body: JSON.stringify(['SET', orderId, JSON.stringify(orderData)])
+                });
+            }
             return res.status(200).json({ 
                 success: true, 
                 phone: orderData.phone, 
                 status: orderData.status, 
-                service: orderData.service,
-                created_at: orderData.created_at // 返回创建时间
+                service: service, // 返回清洗干净的服务代码
+                created_at: orderData.created_at 
             });
         }
 
-        const service = (orderData.service || 'dr').trim();
-        const country = service === 'dr' ? '187' : '33';
-
+        // 获取新号码
         const url = new URL('https://api.grizzlysms.com/stubs/handler_api.php');
         url.searchParams.append('api_key', API_KEY);
         url.searchParams.append('action', 'getNumber');
@@ -44,8 +57,7 @@ export default async function handler(req, res) {
             orderData.grizzly_id = parts[1];
             orderData.phone = parts[2];
             orderData.status = 'PENDING';
-            // 【关键代码】：记录号码获取的精确时间（毫秒）
-            orderData.created_at = Date.now(); 
+            orderData.created_at = Date.now(); // 记录精准获取时间
 
             await fetch(process.env.KV_REST_API_URL, {
                 method: 'POST',
