@@ -8,10 +8,11 @@
         body { font-family: -apple-system, sans-serif; background-color: #f5f5f5; margin: 0; padding: 20px; text-align: center; }
         .container { background: #fff; max-width: 400px; margin: 0 auto; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .box { border: 1px solid #ddd; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
-        .phone-display { font-size: 28px; font-weight: bold; color: #d9534f; margin: 10px 0; }
-        .country-display { font-size: 14px; color: #007bff; font-weight: bold; }
+        .phone-display { font-size: 32px; font-weight: bold; color: #d9534f; margin: 10px 0; letter-spacing: 2px; }
+        .country-display { font-size: 14px; color: #007bff; font-weight: bold; margin-bottom: 5px; }
+        .countdown-display { font-size: 14px; color: #d9534f; font-weight: bold; margin-bottom: 15px; }
         .code-display { font-size: 32px; font-weight: bold; color: #5cb85c; margin: 15px 0; letter-spacing: 5px; }
-        button { background: #007bff; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 10px;}
+        button { background: #007bff; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 5px;}
         button:disabled { background: #ccc; cursor: not-allowed; }
         .status { margin-top: 15px; color: #666; font-size: 14px; }
         select { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ccc; font-size: 16px; }
@@ -34,6 +35,10 @@
         <div style="font-size: 12px; color: #888;">平台分配的手机号</div>
         <div class="country-display" id="countryBox"></div>
         <div class="phone-display" id="phoneBox">等待获取...</div>
+        
+        <!-- 这里是新增的倒计时展示区 -->
+        <div class="countdown-display" id="countdownBox"></div>
+        
         <button id="getBtn" onclick="startTask()">1. 获取新手机号</button>
     </div>
 
@@ -47,6 +52,8 @@
 <script>
     let currentId = null;
     let checkInterval = null;
+    let countdownInterval = null; // 倒计时定时器
+    let timeLeft = 1200; // 20分钟 = 1200秒
 
     async function startTask() {
         const btn = document.getElementById('getBtn');
@@ -54,6 +61,7 @@
         const statusBox = document.getElementById('statusBox');
         const codeBox = document.getElementById('codeBox');
         const countryBox = document.getElementById('countryBox');
+        const countdownBox = document.getElementById('countdownBox');
         
         const service = document.getElementById('serviceSelect').value;
         
@@ -68,11 +76,17 @@
             countryName = '哥伦比亚 (+57)'; 
         }
 
+        // 初始化界面状态
         btn.disabled = true;
         countryBox.innerText = '';
+        countdownBox.innerText = '';
         phoneBox.innerText = '正在请求...';
         statusBox.innerText = `正在请求 ${countryName} 的号码...`;
         codeBox.innerText = '------';
+        
+        // 清除旧的定时器
+        if(checkInterval) clearInterval(checkInterval);
+        if(countdownInterval) clearInterval(countdownInterval);
         
         try {
             const res = await fetch(`/api/getNumber?service=${service}&country=${country}`);
@@ -81,30 +95,40 @@
             if (data.success) {
                 countryBox.innerText = `归属地：${countryName}`;
                 
-                // === 这里是新增的号码格式化逻辑 ===
+                // === 纯号码截取逻辑 ===
                 let displayPhone = data.phone; 
-                
-                if (service === 'dr' && displayPhone.startsWith('1') && displayPhone.length === 11) {
-                    // 如果是美国号码，格式化为 +1 (XXX) XXX-XXXX
-                    const area = displayPhone.substring(1, 4);
-                    const middle = displayPhone.substring(4, 7);
-                    const last = displayPhone.substring(7, 11);
-                    displayPhone = `+1 (${area}) ${middle}-${last}`;
+                if (service === 'dr' && displayPhone.startsWith('1')) {
+                    displayPhone = displayPhone.substring(1); // 自动去掉开头的 1
                 } else if (service === 'acz' && displayPhone.startsWith('57')) {
-                    // 如果是哥伦比亚号码，格式化为 +57 XXXXXXXX
-                    displayPhone = `+57 ${displayPhone.substring(2)}`;
-                } else {
-                    // 其他情况保底，加一个 + 号
-                    displayPhone = `+${displayPhone}`;
+                    displayPhone = displayPhone.substring(2); // 自动去掉开头的 57
                 }
-                
                 phoneBox.innerText = displayPhone;
-                // ================================
+                // =====================
 
                 currentId = data.id;
                 statusBox.innerText = '号码获取成功！请在APP发送验证码。正在监听...';
                 
-                if(checkInterval) clearInterval(checkInterval);
+                // 开启 20 分钟倒计时
+                timeLeft = 1200;
+                countdownBox.innerText = '号码有效期：20分钟0秒';
+                countdownInterval = setInterval(() => {
+                    timeLeft--;
+                    if (timeLeft <= 0) {
+                        // 倒计时结束，停止所有动作
+                        clearInterval(countdownInterval);
+                        clearInterval(checkInterval);
+                        countdownBox.innerText = '号码有效期已过';
+                        statusBox.innerText = '已超时，请重新获取新号码';
+                        btn.disabled = false;
+                    } else {
+                        // 计算分钟和秒数
+                        let m = Math.floor(timeLeft / 60);
+                        let s = timeLeft % 60;
+                        countdownBox.innerText = `号码有效期：${m}分钟${s}秒`;
+                    }
+                }, 1000);
+
+                // 开启验证码轮询（每3秒查一次）
                 checkInterval = setInterval(checkCode, 3000); 
             } else {
                 phoneBox.innerText = '获取失败';
@@ -130,7 +154,11 @@
             if (data.success) {
                 document.getElementById('codeBox').innerText = data.code;
                 document.getElementById('statusBox').innerText = '验证码获取成功！';
+                
+                // 拿到验证码后停止倒计时和轮询
                 clearInterval(checkInterval); 
+                clearInterval(countdownInterval);
+                document.getElementById('countdownBox').innerText = '✅ 流程已完成';
                 document.getElementById('getBtn').disabled = false; 
             } else {
                 if (data.status === 'STATUS_WAIT_CODE') {
