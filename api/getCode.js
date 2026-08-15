@@ -20,8 +20,8 @@ export default async function handler(req, res) {
             return res.status(200).json({ success: true, code: orderData.code });
         }
 
-        // 同样采用严谨的 URL 格式
-        const url = `https://api.grizzlysms.com/stubs/handler_api.php?action=getStatus&api_key=${API_KEY}&id=${orderData.grizzly_id}`;
+        // 【关键修复】：将 api_key 严格放在第一位
+        const url = `https://api.grizzlysms.com/stubs/handler_api.php?api_key=${API_KEY}&action=getStatus&id=${orderData.grizzly_id}`;
 
         const response = await fetch(url);
         const text = await response.text();
