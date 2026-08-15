@@ -18,15 +18,17 @@ export default async function handler(req, res) {
         
         let orderData = JSON.parse(kvData.result);
 
-        if (orderData.status === 'COMPLETED') {
-            if (isChange) return res.status(400).json({ success: false, error: '订单已完成，无法更换号码' });
-            return res.status(200).json({ success: true, phone: orderData.phone, status: orderData.status, service: orderData.service, created_at: orderData.created_at });
-        }
-
+        // 【关键修复】：把清洗数据的逻辑提到最前面，让所有状态都能用上正确的 service
         let rawService = orderData.service;
         if (Array.isArray(rawService)) rawService = rawService[0];
         const service = (String(rawService).trim() === 'acz') ? 'acz' : 'dr';
         const country = (service === 'dr') ? '187' : '33';
+
+        // 订单已完成时，返回清洗干净的 service
+        if (orderData.status === 'COMPLETED') {
+            if (isChange) return res.status(400).json({ success: false, error: '订单已完成，无法更换号码' });
+            return res.status(200).json({ success: true, phone: orderData.phone, status: orderData.status, service: service, created_at: orderData.created_at });
+        }
 
         if (orderData.status === 'PENDING') {
             if (!isChange) {
@@ -38,12 +40,12 @@ export default async function handler(req, res) {
                         body: JSON.stringify(['SET', orderId, JSON.stringify(orderData)])
                     });
                 }
+                // 返回清洗干净的 service
                 return res.status(200).json({ success: true, phone: orderData.phone, status: orderData.status, service: service, created_at: orderData.created_at });
             } else {
                 const elapsed = Date.now() - (orderData.created_at || 0);
                 const isExpired = elapsed >= 20 * 60 * 1000;
-                // 【关键修改】改为3分钟冷却：3分钟 = 180000毫秒 (预留2秒网络延迟容错)
-                const isCooldown = elapsed < 178000; 
+                const isCooldown = elapsed < 178000; // 3分钟冷却
 
                 if (isCooldown && !isExpired) {
                     const left = Math.ceil((180000 - elapsed) / 1000);
