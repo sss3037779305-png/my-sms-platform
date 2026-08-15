@@ -17,7 +17,6 @@
         
         .btn-change { background: #f0ad4e; color: white; border: none; padding: 12px 20px; font-size: 15px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 5px; font-weight: bold; transition: 0.3s;}
         .btn-change:disabled { background: #e0e0e0; color: #888; cursor: not-allowed; }
-        /* 新增：提示文字的样式 */
         .hint-text { font-size: 12px; color: #888; margin-top: 10px; line-height: 1.5; }
     </style>
 </head>
@@ -34,7 +33,6 @@
         <div class="countdown-display" id="countdownBox"></div>
         
         <button class="btn-change" id="changeBtn" style="display: none;" onclick="changeNumber()">正在计算...</button>
-        <!-- 新增：换号规则提示，默认隐藏 -->
         <div class="hint-text" id="changeHint" style="display: none;">
             💡 提示：当号码被风控或3分钟内未接收到验证码时，可点击申请换号
         </div>
@@ -64,7 +62,8 @@
 
     async function startTask() {
         try {
-            const res = await fetch(`/api/getNumber?order=${orderId}`);
+            // 【防苹果缓存】请求带有时间戳
+            const res = await fetch(`/api/getNumber?order=${orderId}&t=${Date.now()}`);
             const data = await res.json();
             handleNumberResponse(data);
         } catch (err) {
@@ -77,7 +76,7 @@
             const countryName = data.service === 'dr' ? '归属地：美国 (+1)' : '归属地：哥伦比亚 (+57)';
             document.getElementById('countryBox').innerText = countryName;
             
-            let displayPhone = data.phone; 
+            let displayPhone = String(data.phone); 
             if (data.service === 'dr' && displayPhone.startsWith('1')) displayPhone = displayPhone.substring(1);
             else if (data.service === 'acz' && displayPhone.startsWith('57')) displayPhone = displayPhone.substring(2);
             
@@ -92,7 +91,9 @@
                 document.getElementById('statusBox').innerText = '正在等待接收验证码... (请在APP中发送)';
                 startCountdown(data.created_at); 
                 if(checkInterval) clearInterval(checkInterval);
-                checkInterval = setInterval(checkCode, 3000); 
+                
+                // 【节省额度】延长为 5 秒查一次
+                checkInterval = setInterval(checkCode, 5000); 
             }
         } else {
             document.getElementById('phoneBox').innerText = '获取失败';
@@ -109,14 +110,14 @@
         const changeHint = document.getElementById('changeHint');
         
         changeBtn.style.display = 'block'; 
-        changeHint.style.display = 'block'; // 显示提示文字
+        changeHint.style.display = 'block'; 
         
         if (!createdAt) createdAt = Date.now(); 
         
         countdownInterval = setInterval(() => {
             let elapsed = Math.floor((Date.now() - createdAt) / 1000);
             let timeLeft = 1200 - elapsed; 
-            let cooldownLeft = 180 - elapsed; // 【关键修改】3分钟 = 180秒防刷冷却
+            let cooldownLeft = 180 - elapsed; 
 
             if (timeLeft <= 0) {
                 clearInterval(countdownInterval);
@@ -131,7 +132,7 @@
                 changeBtn.disabled = false;
                 changeBtn.style.backgroundColor = '#007bff';
                 changeBtn.style.color = '#fff';
-                changeHint.style.display = 'none'; // 超时后隐藏提示文字，使界面简洁
+                changeHint.style.display = 'none'; 
             } else {
                 let m = Math.floor(timeLeft / 60);
                 let s = timeLeft % 60;
@@ -164,13 +165,14 @@
         document.getElementById('statusBox').innerText = '正在与服务器通信为您更换号码...';
 
         try {
-            const res = await fetch(`/api/getNumber?order=${orderId}&change=true`);
+            // 【防缓存】加入随机时间戳
+            const res = await fetch(`/api/getNumber?order=${orderId}&change=true&t=${Date.now()}`);
             const data = await res.json();
             
             if (data.success) {
                 handleNumberResponse(data); 
             } else {
-                alert('换号失败: ' + data.error);
+                alert('换号提示: ' + data.error);
                 startTask(); 
             }
         } catch (err) {
@@ -181,7 +183,8 @@
 
     async function checkCode() {
         try {
-            const res = await fetch(`/api/getCode?order=${orderId}`);
+            // 【防缓存】加入随机时间戳
+            const res = await fetch(`/api/getCode?order=${orderId}&t=${Date.now()}`);
             const data = await res.json();
 
             if (data.success) {
@@ -194,7 +197,7 @@
                     document.getElementById('countdownBox').innerText = '✅ 订单已完成';
                 }
                 document.getElementById('changeBtn').style.display = 'none'; 
-                document.getElementById('changeHint').style.display = 'none'; // 收到验证码后隐藏所有多余元素
+                document.getElementById('changeHint').style.display = 'none'; 
             } else {
                 document.getElementById('statusBox').innerText = '正在等待接收验证码... (请确保已在APP中发送)';
             }
