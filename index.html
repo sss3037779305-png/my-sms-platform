@@ -3,169 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>账号登录系统</title>
+    <title>账号注册系统</title>
     <style>
         body { font-family: -apple-system, sans-serif; background-color: #f5f5f5; margin: 0; padding: 20px; text-align: center; }
         .container { background: #fff; max-width: 400px; margin: 0 auto; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .box { border: 1px solid #ddd; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
         .phone-display { font-size: 32px; font-weight: bold; color: #d9534f; margin: 10px 0; letter-spacing: 2px; }
         .country-display { font-size: 14px; color: #007bff; font-weight: bold; margin-bottom: 5px; }
-        .countdown-display { font-size: 14px; color: #d9534f; font-weight: bold; margin-bottom: 15px; }
         .code-display { font-size: 32px; font-weight: bold; color: #5cb85c; margin: 15px 0; letter-spacing: 5px; }
-        button { background: #007bff; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 5px;}
-        button:disabled { background: #ccc; cursor: not-allowed; }
         .status { margin-top: 15px; color: #666; font-size: 14px; }
-        select { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ccc; font-size: 16px; }
+        .error-screen { color: red; font-weight: bold; margin-top: 50px; font-size: 18px; }
     </style>
 </head>
 <body>
 
-<div class="container">
+<div id="mainContainer" class="container" style="display: none;">
     <h2>获取验证码</h2>
-    
-    <div class="box" style="text-align: left;">
-        <label style="font-size: 12px; color: #888;">选择需要注册的项目：</label>
-        <select id="serviceSelect">
-            <option value="dr">ChatGPT (Codex)</option>
-            <option value="acz">Claude</option>
-        </select>
-    </div>
     
     <div class="box">
         <div style="font-size: 12px; color: #888;">平台分配的手机号</div>
         <div class="country-display" id="countryBox"></div>
-        <div class="phone-display" id="phoneBox">等待获取...</div>
-        
-        <!-- 这里是新增的倒计时展示区 -->
-        <div class="countdown-display" id="countdownBox"></div>
-        
-        <button id="getBtn" onclick="startTask()">1. 获取新手机号</button>
+        <div class="phone-display" id="phoneBox">正在分配...</div>
     </div>
 
     <div class="box">
         <div style="font-size: 12px; color: #888;">收到的短信验证码</div>
         <div class="code-display" id="codeBox">------</div>
-        <div class="status" id="statusBox">准备就绪，请选择项目后点击获取</div>
+        <div class="status" id="statusBox">正在连接服务器...</div>
     </div>
 </div>
 
+<div id="errorContainer" class="error-screen"></div>
+
 <script>
-    let currentId = null;
+    // 1. 从网址中提取订单号 (例如 ?order=ord_xxx)
+    const urlParams = new URLSearchParams(window.location.search);
+    const orderId = urlParams.get('order');
     let checkInterval = null;
-    let countdownInterval = null; // 倒计时定时器
-    let timeLeft = 1200; // 20分钟 = 1200秒
+
+    if (!orderId) {
+        document.getElementById('errorContainer').innerText = "🚫 链接无效，请联系卖家获取您的专属订单链接。";
+    } else {
+        document.getElementById('mainContainer').style.display = 'block';
+        startTask();
+    }
 
     async function startTask() {
-        const btn = document.getElementById('getBtn');
-        const phoneBox = document.getElementById('phoneBox');
-        const statusBox = document.getElementById('statusBox');
-        const codeBox = document.getElementById('codeBox');
-        const countryBox = document.getElementById('countryBox');
-        const countdownBox = document.getElementById('countdownBox');
-        
-        const service = document.getElementById('serviceSelect').value;
-        
-        let country = '';
-        let countryName = '';
-        
-        if (service === 'dr') {
-            country = '187';
-            countryName = '美国 (+1)';
-        } else if (service === 'acz') {
-            country = '33';
-            countryName = '哥伦比亚 (+57)'; 
-        }
-
-        // 初始化界面状态
-        btn.disabled = true;
-        countryBox.innerText = '';
-        countdownBox.innerText = '';
-        phoneBox.innerText = '正在请求...';
-        statusBox.innerText = `正在请求 ${countryName} 的号码...`;
-        codeBox.innerText = '------';
-        
-        // 清除旧的定时器
-        if(checkInterval) clearInterval(checkInterval);
-        if(countdownInterval) clearInterval(countdownInterval);
-        
         try {
-            const res = await fetch(`/api/getNumber?service=${service}&country=${country}`);
+            // 页面一打开，自动向后端请求号码
+            const res = await fetch(`/api/getNumber?order=${orderId}`);
             const data = await res.json();
 
             if (data.success) {
-                countryBox.innerText = `归属地：${countryName}`;
+                const countryName = data.service === 'dr' ? '归属地：美国 (+1)' : '归属地：哥伦比亚 (+57)';
+                document.getElementById('countryBox').innerText = countryName;
                 
-                // === 纯号码截取逻辑 ===
+                // 纯号码截取
                 let displayPhone = data.phone; 
-                if (service === 'dr' && displayPhone.startsWith('1')) {
-                    displayPhone = displayPhone.substring(1); // 自动去掉开头的 1
-                } else if (service === 'acz' && displayPhone.startsWith('57')) {
-                    displayPhone = displayPhone.substring(2); // 自动去掉开头的 57
-                }
-                phoneBox.innerText = displayPhone;
-                // =====================
-
-                currentId = data.id;
-                statusBox.innerText = '号码获取成功！请在APP发送验证码。正在监听...';
+                if (data.service === 'dr' && displayPhone.startsWith('1')) displayPhone = displayPhone.substring(1);
+                else if (data.service === 'acz' && displayPhone.startsWith('57')) displayPhone = displayPhone.substring(2);
                 
-                // 开启 20 分钟倒计时
-                timeLeft = 1200;
-                countdownBox.innerText = '号码有效期：20分钟0秒';
-                countdownInterval = setInterval(() => {
-                    timeLeft--;
-                    if (timeLeft <= 0) {
-                        // 倒计时结束，停止所有动作
-                        clearInterval(countdownInterval);
-                        clearInterval(checkInterval);
-                        countdownBox.innerText = '号码有效期已过';
-                        statusBox.innerText = '已超时，请重新获取新号码';
-                        btn.disabled = false;
-                    } else {
-                        // 计算分钟和秒数
-                        let m = Math.floor(timeLeft / 60);
-                        let s = timeLeft % 60;
-                        countdownBox.innerText = `号码有效期：${m}分钟${s}秒`;
-                    }
-                }, 1000);
-
-                // 开启验证码轮询（每3秒查一次）
-                checkInterval = setInterval(checkCode, 3000); 
+                document.getElementById('phoneBox').innerText = displayPhone;
+                
+                if (data.status === 'COMPLETED') {
+                    // 如果订单已经是完成状态，直接请求一次验证码显示出来，不轮询
+                    checkCode(); 
+                } else {
+                    document.getElementById('statusBox').innerText = '正在等待接收验证码... (请在APP中发送)';
+                    checkInterval = setInterval(checkCode, 3000); 
+                }
             } else {
-                phoneBox.innerText = '获取失败';
-                let errorMsg = data.error;
-                if(errorMsg.includes('NO_NUMBERS')) errorMsg = '该国家目前没有号码库存';
-                if(errorMsg.includes('NO_BALANCE')) errorMsg = 'API账户余额不足';
-                statusBox.innerText = '错误: ' + errorMsg;
-                btn.disabled = false;
+                document.getElementById('phoneBox').innerText = '获取失败';
+                document.getElementById('statusBox').innerText = '错误: ' + data.error;
             }
         } catch (err) {
-            statusBox.innerText = '网络请求失败';
-            btn.disabled = false;
+            document.getElementById('statusBox').innerText = '网络请求失败，请刷新网页重试';
         }
     }
 
-  async function checkCode() {
-        if (!currentId) return;
-
+    async function checkCode() {
         try {
-            const res = await fetch(`/api/getCode?id=${currentId}`);
+            const res = await fetch(`/api/getCode?order=${orderId}`);
             const data = await res.json();
 
             if (data.success) {
                 document.getElementById('codeBox').innerText = data.code;
-                document.getElementById('statusBox').innerText = '验证码获取成功！';
-                
-                // 拿到验证码后停止倒计时和轮询
-                clearInterval(checkInterval); 
-                clearInterval(countdownInterval);
-                document.getElementById('countdownBox').innerText = '✅ 流程已完成';
-                document.getElementById('getBtn').disabled = false; 
+                document.getElementById('statusBox').innerText = '✅ 验证码获取成功！订单已完成。';
+                if(checkInterval) clearInterval(checkInterval); 
             } else {
-                // 【核心修改】不管后端返回什么乱七八糟的状态，只要没成功拿到code，前端统一温柔地显示这句话：
                 document.getElementById('statusBox').innerText = '正在等待接收验证码... (请确保已在APP中发送)';
             }
         } catch (err) {
-            // 如果网络断了，不显示可怕的报错，而是默默等待恢复
             console.error('轮询失败', err);
         }
     }
