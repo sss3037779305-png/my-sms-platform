@@ -144,7 +144,7 @@
         }
     }
 
-    async function checkCode() {
+  async function checkCode() {
         if (!currentId) return;
 
         try {
@@ -161,13 +161,11 @@
                 document.getElementById('countdownBox').innerText = '✅ 流程已完成';
                 document.getElementById('getBtn').disabled = false; 
             } else {
-                if (data.status === 'STATUS_WAIT_CODE') {
-                    document.getElementById('statusBox').innerText = '正在等待短信接收 (此过程可能需要几分钟)...';
-                } else {
-                    document.getElementById('statusBox').innerText = '系统状态: ' + data.status;
-                }
+                // 【核心修改】不管后端返回什么乱七八糟的状态，只要没成功拿到code，前端统一温柔地显示这句话：
+                document.getElementById('statusBox').innerText = '正在等待接收验证码... (请确保已在APP中发送)';
             }
         } catch (err) {
+            // 如果网络断了，不显示可怕的报错，而是默默等待恢复
             console.error('轮询失败', err);
         }
     }
