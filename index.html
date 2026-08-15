@@ -14,6 +14,10 @@
         .code-display { font-size: 32px; font-weight: bold; color: #5cb85c; margin: 15px 0; letter-spacing: 5px; }
         .status { margin-top: 15px; color: #666; font-size: 14px; }
         .error-screen { color: red; font-weight: bold; margin-top: 50px; font-size: 18px; }
+        
+        /* 新增：换号按钮的动态样式 */
+        .btn-change { background: #f0ad4e; color: white; border: none; padding: 12px 20px; font-size: 15px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 5px; font-weight: bold; transition: 0.3s;}
+        .btn-change:disabled { background: #e0e0e0; color: #888; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -27,6 +31,9 @@
         <div class="phone-display" id="phoneBox">正在分配...</div>
         
         <div class="countdown-display" id="countdownBox"></div>
+        
+        <!-- 换号按钮：默认隐藏 -->
+        <button class="btn-change" id="changeBtn" style="display: none;" onclick="changeNumber()">正在计算...</button>
     </div>
 
     <div class="box">
@@ -55,59 +62,119 @@
         try {
             const res = await fetch(`/api/getNumber?order=${orderId}`);
             const data = await res.json();
-
-            if (data.success) {
-                const countryName = data.service === 'dr' ? '归属地：美国 (+1)' : '归属地：哥伦比亚 (+57)';
-                document.getElementById('countryBox').innerText = countryName;
-                
-                let displayPhone = data.phone; 
-                if (data.service === 'dr' && displayPhone.startsWith('1')) displayPhone = displayPhone.substring(1);
-                else if (data.service === 'acz' && displayPhone.startsWith('57')) displayPhone = displayPhone.substring(2);
-                
-                document.getElementById('phoneBox').innerText = displayPhone;
-                
-                if (data.status === 'COMPLETED') {
-                    document.getElementById('countdownBox').innerText = '✅ 订单已完成';
-                    checkCode(); 
-                } else {
-                    document.getElementById('statusBox').innerText = '正在等待接收验证码... (请在APP中发送)';
-                    startCountdown(data.created_at); 
-                    checkInterval = setInterval(checkCode, 3000); 
-                }
-            } else {
-                document.getElementById('phoneBox').innerText = '获取失败';
-                document.getElementById('statusBox').innerText = '错误: ' + data.error;
-            }
+            handleNumberResponse(data);
         } catch (err) {
             document.getElementById('statusBox').innerText = '网络请求失败，请刷新网页重试';
+        }
+    }
+
+    // 抽离出来的通用处理函数，初次获取和换号后都能用
+    function handleNumberResponse(data) {
+        if (data.success) {
+            const countryName = data.service === 'dr' ? '归属地：美国 (+1)' : '归属地：哥伦比亚 (+57)';
+            document.getElementById('countryBox').innerText = countryName;
+            
+            let displayPhone = data.phone; 
+            if (data.service === 'dr' && displayPhone.startsWith('1')) displayPhone = displayPhone.substring(1);
+            else if (data.service === 'acz' && displayPhone.startsWith('57')) displayPhone = displayPhone.substring(2);
+            
+            document.getElementById('phoneBox').innerText = displayPhone;
+            
+            if (data.status === 'COMPLETED') {
+                document.getElementById('countdownBox').innerText = '✅ 订单已完成';
+                document.getElementById('changeBtn').style.display = 'none';
+                checkCode(); 
+            } else {
+                document.getElementById('statusBox').innerText = '正在等待接收验证码... (请在APP中发送)';
+                startCountdown(data.created_at); 
+                if(checkInterval) clearInterval(checkInterval);
+                checkInterval = setInterval(checkCode, 3000); 
+            }
+        } else {
+            document.getElementById('phoneBox').innerText = '获取失败';
+            document.getElementById('statusBox').innerText = '错误: ' + data.error;
+            document.getElementById('changeBtn').innerText = '重试获取';
+            document.getElementById('changeBtn').disabled = false;
         }
     }
 
     function startCountdown(createdAt) {
         if (countdownInterval) clearInterval(countdownInterval);
         const countdownBox = document.getElementById('countdownBox');
+        const changeBtn = document.getElementById('changeBtn');
+        changeBtn.style.display = 'block'; // 显示按钮
         
         if (!createdAt) createdAt = Date.now(); 
         
         countdownInterval = setInterval(() => {
             let elapsed = Math.floor((Date.now() - createdAt) / 1000);
-            let timeLeft = 1200 - elapsed; 
+            let timeLeft = 1200 - elapsed; // 20分钟总过期倒计时
+            let cooldownLeft = 300 - elapsed; // 5分钟防刷冷却倒计时
 
             if (timeLeft <= 0) {
-                // 【核心修改点】在这里将超时提示改为了你的要求
+                // 【20分钟超时】
                 clearInterval(countdownInterval);
                 if (checkInterval) clearInterval(checkInterval);
                 countdownBox.innerText = '⚠️ 号码已过期';
-                document.getElementById('statusBox').innerText = '号码已过期，请联系客服补发处理';
-                // 加粗并标红，让客户更直观看到提示
+                
+                document.getElementById('statusBox').innerText = '号码已过期，您可以免费获取一个新号码：';
                 document.getElementById('statusBox').style.color = '#d9534f';
                 document.getElementById('statusBox').style.fontWeight = 'bold';
+                
+                changeBtn.innerText = '🔄 重新获取新号码';
+                changeBtn.disabled = false;
+                changeBtn.style.backgroundColor = '#007bff';
+                changeBtn.style.color = '#fff';
             } else {
+                // 【正常倒计时】
                 let m = Math.floor(timeLeft / 60);
                 let s = timeLeft % 60;
                 countdownBox.innerText = `号码有效期：${m}分${s}秒`;
+                
+                // 恢复默认字体颜色
+                document.getElementById('statusBox').style.color = '#666';
+                document.getElementById('statusBox').style.fontWeight = 'normal';
+
+                // 【5分钟冷却判断】
+                if (cooldownLeft > 0) {
+                    let cm = Math.floor(cooldownLeft / 60);
+                    let cs = cooldownLeft % 60;
+                    changeBtn.innerText = `换号冷却中... (${cm}分${cs}秒后可换)`;
+                    changeBtn.disabled = true;
+                    changeBtn.style.backgroundColor = '#e0e0e0';
+                    changeBtn.style.color = '#888';
+                } else {
+                    changeBtn.innerText = '号码被风控？点击免费换号';
+                    changeBtn.disabled = false;
+                    changeBtn.style.backgroundColor = '#f0ad4e';
+                    changeBtn.style.color = '#fff';
+                }
             }
         }, 1000);
+    }
+
+    // 【新增】用户手动点击换号按钮的逻辑
+    async function changeNumber() {
+        const changeBtn = document.getElementById('changeBtn');
+        changeBtn.disabled = true;
+        changeBtn.innerText = '正在请求新号码...';
+        document.getElementById('statusBox').innerText = '正在与服务器通信为您更换号码...';
+
+        try {
+            // 加上 change=true 的参数
+            const res = await fetch(`/api/getNumber?order=${orderId}&change=true`);
+            const data = await res.json();
+            
+            if (data.success) {
+                handleNumberResponse(data); // 复用渲染逻辑
+            } else {
+                alert('换号失败: ' + data.error);
+                startTask(); // 失败则重新拉取同步当前状态
+            }
+        } catch (err) {
+            alert('网络请求失败');
+            startTask();
+        }
     }
 
     async function checkCode() {
@@ -124,6 +191,7 @@
                     clearInterval(countdownInterval);
                     document.getElementById('countdownBox').innerText = '✅ 订单已完成';
                 }
+                document.getElementById('changeBtn').style.display = 'none'; // 收到验证码彻底隐藏换号按钮
             } else {
                 document.getElementById('statusBox').innerText = '正在等待接收验证码... (请确保已在APP中发送)';
             }
