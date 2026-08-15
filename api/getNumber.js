@@ -18,17 +18,15 @@ export default async function handler(req, res) {
         
         let orderData = JSON.parse(kvData.result);
 
-        // 【关键修复】：把清洗数据的逻辑提到最前面，让所有状态都能用上正确的 service
+        if (orderData.status === 'COMPLETED') {
+            if (isChange) return res.status(400).json({ success: false, error: '订单已完成，无法更换号码' });
+            return res.status(200).json({ success: true, phone: orderData.phone, status: orderData.status, service: orderData.service, created_at: orderData.created_at });
+        }
+
         let rawService = orderData.service;
         if (Array.isArray(rawService)) rawService = rawService[0];
         const service = (String(rawService).trim() === 'acz') ? 'acz' : 'dr';
         const country = (service === 'dr') ? '187' : '33';
-
-        // 订单已完成时，返回清洗干净的 service
-        if (orderData.status === 'COMPLETED') {
-            if (isChange) return res.status(400).json({ success: false, error: '订单已完成，无法更换号码' });
-            return res.status(200).json({ success: true, phone: orderData.phone, status: orderData.status, service: service, created_at: orderData.created_at });
-        }
 
         if (orderData.status === 'PENDING') {
             if (!isChange) {
@@ -40,7 +38,6 @@ export default async function handler(req, res) {
                         body: JSON.stringify(['SET', orderId, JSON.stringify(orderData)])
                     });
                 }
-                // 返回清洗干净的 service
                 return res.status(200).json({ success: true, phone: orderData.phone, status: orderData.status, service: service, created_at: orderData.created_at });
             } else {
                 const elapsed = Date.now() - (orderData.created_at || 0);
@@ -52,6 +49,7 @@ export default async function handler(req, res) {
                     return res.status(400).json({ success: false, error: `换号冷却中，请等待 ${left} 秒` });
                 }
 
+                // 【保留你想要的逻辑】：先向 Grizzly 退掉当前号码
                 if (orderData.grizzly_id) {
                     const cancelUrl = new URL('https://api.grizzlysms.com/stubs/handler_api.php');
                     cancelUrl.searchParams.append('api_key', API_KEY);
@@ -63,6 +61,7 @@ export default async function handler(req, res) {
             }
         }
 
+        // 然后再去拿新号
         const url = new URL('https://api.grizzlysms.com/stubs/handler_api.php');
         url.searchParams.append('api_key', API_KEY);
         url.searchParams.append('action', 'getNumber');
@@ -85,16 +84,11 @@ export default async function handler(req, res) {
                 body: JSON.stringify(['SET', orderId, JSON.stringify(orderData)])
             });
 
-            return res.status(200).json({ 
-                success: true, 
-                phone: orderData.phone, 
-                service: service,
-                created_at: orderData.created_at 
-            });
+            return res.status(200).json({ success: true, phone: orderData.phone, service: service, created_at: orderData.created_at });
         } else {
             return res.status(400).json({ success: false, error: text });
         }
     } catch (error) {
-        return res.status(500).json({ success: false, error: '系统错误: ' + error.message });
+        return res.status(500).json({ success: false, error: '系统错误' });
     }
 }
