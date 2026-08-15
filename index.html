@@ -8,11 +8,13 @@
         body { font-family: -apple-system, sans-serif; background-color: #f5f5f5; margin: 0; padding: 20px; text-align: center; }
         .container { background: #fff; max-width: 400px; margin: 0 auto; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .box { border: 1px solid #ddd; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
-        .phone-display { font-size: 28px; font-weight: bold; color: #d9534f; margin: 15px 0; }
+        .phone-display { font-size: 28px; font-weight: bold; color: #d9534f; margin: 10px 0; }
+        .country-display { font-size: 14px; color: #007bff; font-weight: bold; }
         .code-display { font-size: 32px; font-weight: bold; color: #5cb85c; margin: 15px 0; letter-spacing: 5px; }
-        button { background: #0275d8; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; }
+        button { background: #007bff; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 10px;}
         button:disabled { background: #ccc; cursor: not-allowed; }
         .status { margin-top: 15px; color: #666; font-size: 14px; }
+        select { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ccc; font-size: 16px; }
     </style>
 </head>
 <body>
@@ -20,8 +22,19 @@
 <div class="container">
     <h2>获取验证码</h2>
     
+    <div class="box" style="text-align: left;">
+        <label style="font-size: 12px; color: #888;">选择需要注册的项目：</label>
+        <!-- 只有两个选项，无需选择国家 -->
+        <select id="serviceSelect">
+            <option value="dr">ChatGPT (AI Chat)</option>
+            <option value="acz">Claude</option>
+        </select>
+    </div>
+    
     <div class="box">
         <div style="font-size: 12px; color: #888;">平台分配的手机号</div>
+        <!-- 这里用来动态显示国家和区号 -->
+        <div class="country-display" id="countryBox"></div>
         <div class="phone-display" id="phoneBox">等待获取...</div>
         <button id="getBtn" onclick="startTask()">1. 获取新手机号</button>
     </div>
@@ -29,7 +42,7 @@
     <div class="box">
         <div style="font-size: 12px; color: #888;">收到的短信验证码</div>
         <div class="code-display" id="codeBox">------</div>
-        <div class="status" id="statusBox">准备就绪</div>
+        <div class="status" id="statusBox">准备就绪，请选择项目后点击获取</div>
     </div>
 </div>
 
@@ -42,28 +55,50 @@
         const phoneBox = document.getElementById('phoneBox');
         const statusBox = document.getElementById('statusBox');
         const codeBox = document.getElementById('codeBox');
+        const countryBox = document.getElementById('countryBox');
+        
+        // 1. 获取用户选择的项目 (dr 或 acz)
+        const service = document.getElementById('serviceSelect').value;
+        
+        // 2. 根据项目，在后台自动绑定国家代码和中文显示
+        let country = '';
+        let countryName = '';
+        
+        if (service === 'dr') {
+            country = '187';
+            countryName = '美国 (+1)';
+        } else if (service === 'acz') {
+            country = '33';
+            // 如果你想严格显示塞尔维亚，把这里的文字改成 '塞尔维亚 (+381)' 即可
+            countryName = '哥伦比亚 (+57)'; 
+        }
 
         btn.disabled = true;
+        countryBox.innerText = '';
         phoneBox.innerText = '正在请求...';
-        statusBox.innerText = '正在向服务器请求号码...';
+        statusBox.innerText = `正在请求 ${countryName} 的号码...`;
         codeBox.innerText = '------';
         
-        // 这里的 service=tg 代表 Telegram，country=12 代表美国。你可以根据 Grizzly 的代码表修改
         try {
-            const res = await fetch('/api/getNumber?service=tg&country=12');
+            // 3. 将后台绑定的 service 和 country 发送给服务器
+            const res = await fetch(`/api/getNumber?service=${service}&country=${country}`);
             const data = await res.json();
 
             if (data.success) {
+                // 成功后，将国家和区号显示在号码上方
+                countryBox.innerText = `归属地：${countryName}`;
                 phoneBox.innerText = data.phone;
                 currentId = data.id;
-                statusBox.innerText = '号码获取成功！请去发送验证码。正在监听短信...';
+                statusBox.innerText = '号码获取成功！请在APP发送验证码。正在监听...';
                 
-                // 开始每 3 秒查询一次验证码
                 if(checkInterval) clearInterval(checkInterval);
-                checkInterval = setInterval(checkCode, 3000);
+                checkInterval = setInterval(checkCode, 3000); 
             } else {
                 phoneBox.innerText = '获取失败';
-                statusBox.innerText = '错误: ' + data.error;
+                let errorMsg = data.error;
+                if(errorMsg.includes('NO_NUMBERS')) errorMsg = '该国家目前没有号码库存';
+                if(errorMsg.includes('NO_BALANCE')) errorMsg = 'API账户余额不足';
+                statusBox.innerText = '错误: ' + errorMsg;
                 btn.disabled = false;
             }
         } catch (err) {
@@ -80,17 +115,15 @@
             const data = await res.json();
 
             if (data.success) {
-                // 成功拿到验证码
                 document.getElementById('codeBox').innerText = data.code;
                 document.getElementById('statusBox').innerText = '验证码获取成功！';
                 clearInterval(checkInterval); 
                 document.getElementById('getBtn').disabled = false; 
             } else {
-                // 还没收到，更新状态
                 if (data.status === 'STATUS_WAIT_CODE') {
                     document.getElementById('statusBox').innerText = '正在等待短信接收 (此过程可能需要几分钟)...';
                 } else {
-                    document.getElementById('statusBox').innerText = '当前状态: ' + data.status;
+                    document.getElementById('statusBox').innerText = '系统状态: ' + data.status;
                 }
             }
         } catch (err) {
@@ -98,6 +131,5 @@
         }
     }
 </script>
-
 </body>
 </html>
