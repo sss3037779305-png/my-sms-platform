@@ -21,10 +21,11 @@ export default async function handler(req, res) {
             return res.status(200).json({ success: true, phone: orderData.phone, status: orderData.status, service: orderData.service });
         }
 
-        const service = (orderData.service || 'dr').trim();
+        // 【关键修复点】：抛弃容易报错的 .trim()，采用最简单严格的判定
+        const service = orderData.service === 'acz' ? 'acz' : 'dr';
         const country = service === 'dr' ? '187' : '33';
 
-        // 【终极防错方案】使用系统自带的 URL 引擎构建请求，杜绝任何格式错误
+        // 使用系统自带的 URL 引擎构建请求
         const url = new URL('https://api.grizzlysms.com/stubs/handler_api.php');
         url.searchParams.append('api_key', API_KEY);
         url.searchParams.append('action', 'getNumber');
