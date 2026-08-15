@@ -10,6 +10,7 @@
         .box { border: 1px solid #ddd; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
         .phone-display { font-size: 32px; font-weight: bold; color: #d9534f; margin: 10px 0; letter-spacing: 2px; }
         .country-display { font-size: 14px; color: #007bff; font-weight: bold; margin-bottom: 5px; }
+        .countdown-display { font-size: 14px; color: #d9534f; font-weight: bold; margin-bottom: 15px; }
         .code-display { font-size: 32px; font-weight: bold; color: #5cb85c; margin: 15px 0; letter-spacing: 5px; }
         .status { margin-top: 15px; color: #666; font-size: 14px; }
         .error-screen { color: red; font-weight: bold; margin-top: 50px; font-size: 18px; }
@@ -24,6 +25,8 @@
         <div style="font-size: 12px; color: #888;">平台分配的手机号</div>
         <div class="country-display" id="countryBox"></div>
         <div class="phone-display" id="phoneBox">正在分配...</div>
+        
+        <div class="countdown-display" id="countdownBox"></div>
     </div>
 
     <div class="box">
@@ -36,10 +39,10 @@
 <div id="errorContainer" class="error-screen"></div>
 
 <script>
-    // 1. 从网址中提取订单号 (例如 ?order=ord_xxx)
     const urlParams = new URLSearchParams(window.location.search);
     const orderId = urlParams.get('order');
     let checkInterval = null;
+    let countdownInterval = null; 
 
     if (!orderId) {
         document.getElementById('errorContainer').innerText = "🚫 链接无效，请联系卖家获取您的专属订单链接。";
@@ -50,7 +53,6 @@
 
     async function startTask() {
         try {
-            // 页面一打开，自动向后端请求号码
             const res = await fetch(`/api/getNumber?order=${orderId}`);
             const data = await res.json();
 
@@ -58,7 +60,6 @@
                 const countryName = data.service === 'dr' ? '归属地：美国 (+1)' : '归属地：哥伦比亚 (+57)';
                 document.getElementById('countryBox').innerText = countryName;
                 
-                // 纯号码截取
                 let displayPhone = data.phone; 
                 if (data.service === 'dr' && displayPhone.startsWith('1')) displayPhone = displayPhone.substring(1);
                 else if (data.service === 'acz' && displayPhone.startsWith('57')) displayPhone = displayPhone.substring(2);
@@ -66,10 +67,11 @@
                 document.getElementById('phoneBox').innerText = displayPhone;
                 
                 if (data.status === 'COMPLETED') {
-                    // 如果订单已经是完成状态，直接请求一次验证码显示出来，不轮询
+                    document.getElementById('countdownBox').innerText = '✅ 订单已完成';
                     checkCode(); 
                 } else {
                     document.getElementById('statusBox').innerText = '正在等待接收验证码... (请在APP中发送)';
+                    startCountdown(data.created_at); 
                     checkInterval = setInterval(checkCode, 3000); 
                 }
             } else {
@@ -81,6 +83,33 @@
         }
     }
 
+    function startCountdown(createdAt) {
+        if (countdownInterval) clearInterval(countdownInterval);
+        const countdownBox = document.getElementById('countdownBox');
+        
+        if (!createdAt) createdAt = Date.now(); 
+        
+        countdownInterval = setInterval(() => {
+            let elapsed = Math.floor((Date.now() - createdAt) / 1000);
+            let timeLeft = 1200 - elapsed; 
+
+            if (timeLeft <= 0) {
+                // 【核心修改点】在这里将超时提示改为了你的要求
+                clearInterval(countdownInterval);
+                if (checkInterval) clearInterval(checkInterval);
+                countdownBox.innerText = '⚠️ 号码已过期';
+                document.getElementById('statusBox').innerText = '号码已过期，请联系客服补发处理';
+                // 加粗并标红，让客户更直观看到提示
+                document.getElementById('statusBox').style.color = '#d9534f';
+                document.getElementById('statusBox').style.fontWeight = 'bold';
+            } else {
+                let m = Math.floor(timeLeft / 60);
+                let s = timeLeft % 60;
+                countdownBox.innerText = `号码有效期：${m}分${s}秒`;
+            }
+        }, 1000);
+    }
+
     async function checkCode() {
         try {
             const res = await fetch(`/api/getCode?order=${orderId}`);
@@ -89,7 +118,12 @@
             if (data.success) {
                 document.getElementById('codeBox').innerText = data.code;
                 document.getElementById('statusBox').innerText = '✅ 验证码获取成功！订单已完成。';
+                
                 if(checkInterval) clearInterval(checkInterval); 
+                if(countdownInterval) {
+                    clearInterval(countdownInterval);
+                    document.getElementById('countdownBox').innerText = '✅ 订单已完成';
+                }
             } else {
                 document.getElementById('statusBox').innerText = '正在等待接收验证码... (请确保已在APP中发送)';
             }
