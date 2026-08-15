@@ -1,3 +1,15 @@
+// 【小白专属配置区】以后加新项目，只需要在这里加一行即可！
+// 格式：'项目代码': '国家代码'
+const SERVICE_CONFIG = {
+    'dr': '187',  // ChatGPT - 美国实卡
+    'acz': '187', // Claude - 美国实卡 (根据你的要求改为了187)
+    'tw': '12',   // X (Twitter) - 美国虚拟
+    'go': '12',   // Google - 美国虚拟
+    'ot': '187',  // 其他项目 - 美国实卡
+    'ig': '12',   // Instagram - 美国虚拟
+    'tg': '12'    // Telegram - 美国虚拟
+};
+
 export default async function handler(req, res) {
     const orderId = req.query.order;
     const isChange = req.query.change === 'true'; 
@@ -23,10 +35,17 @@ export default async function handler(req, res) {
             return res.status(200).json({ success: true, phone: orderData.phone, status: orderData.status, service: orderData.service, created_at: orderData.created_at });
         }
 
+        // 【智能匹配项目和国家】
         let rawService = orderData.service;
         if (Array.isArray(rawService)) rawService = rawService[0];
-        const service = (String(rawService).trim() === 'acz') ? 'acz' : 'dr';
-        const country = (service === 'dr') ? '187' : '33';
+        let service = String(rawService).trim();
+        
+        // 如果数据库里的项目代码不在我们的配置表里，默认给它分配 'dr' (ChatGPT)
+        if (!SERVICE_CONFIG[service]) {
+            service = 'dr';
+        }
+        // 根据配置表自动获取对应的国家代码
+        const country = SERVICE_CONFIG[service];
 
         if (orderData.status === 'PENDING') {
             if (!isChange) {
@@ -42,14 +61,13 @@ export default async function handler(req, res) {
             } else {
                 const elapsed = Date.now() - (orderData.created_at || 0);
                 const isExpired = elapsed >= 20 * 60 * 1000;
-                const isCooldown = elapsed < 178000; // 3分钟冷却
+                const isCooldown = elapsed < 178000; 
 
                 if (isCooldown && !isExpired) {
                     const left = Math.ceil((180000 - elapsed) / 1000);
                     return res.status(400).json({ success: false, error: `换号冷却中，请等待 ${left} 秒` });
                 }
 
-                // 【保留你想要的逻辑】：先向 Grizzly 退掉当前号码
                 if (orderData.grizzly_id) {
                     const cancelUrl = new URL('https://api.grizzlysms.com/stubs/handler_api.php');
                     cancelUrl.searchParams.append('api_key', API_KEY);
@@ -61,7 +79,6 @@ export default async function handler(req, res) {
             }
         }
 
-        // 然后再去拿新号
         const url = new URL('https://api.grizzlysms.com/stubs/handler_api.php');
         url.searchParams.append('api_key', API_KEY);
         url.searchParams.append('action', 'getNumber');
