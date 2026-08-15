@@ -24,7 +24,6 @@
     
     <div class="box" style="text-align: left;">
         <label style="font-size: 12px; color: #888;">选择需要注册的项目：</label>
-        <!-- 只有两个选项，无需选择国家 -->
         <select id="serviceSelect">
             <option value="dr">ChatGPT (Codex)</option>
             <option value="acz">Claude</option>
@@ -33,7 +32,6 @@
     
     <div class="box">
         <div style="font-size: 12px; color: #888;">平台分配的手机号</div>
-        <!-- 这里用来动态显示国家和区号 -->
         <div class="country-display" id="countryBox"></div>
         <div class="phone-display" id="phoneBox">等待获取...</div>
         <button id="getBtn" onclick="startTask()">1. 获取新手机号</button>
@@ -57,10 +55,8 @@
         const codeBox = document.getElementById('codeBox');
         const countryBox = document.getElementById('countryBox');
         
-        // 1. 获取用户选择的项目 (dr 或 acz)
         const service = document.getElementById('serviceSelect').value;
         
-        // 2. 根据项目，在后台自动绑定国家代码和中文显示
         let country = '';
         let countryName = '';
         
@@ -69,7 +65,6 @@
             countryName = '美国 (+1)';
         } else if (service === 'acz') {
             country = '33';
-            // 如果你想严格显示塞尔维亚，把这里的文字改成 '塞尔维亚 (+381)' 即可
             countryName = '哥伦比亚 (+57)'; 
         }
 
@@ -80,14 +75,32 @@
         codeBox.innerText = '------';
         
         try {
-            // 3. 将后台绑定的 service 和 country 发送给服务器
             const res = await fetch(`/api/getNumber?service=${service}&country=${country}`);
             const data = await res.json();
 
             if (data.success) {
-                // 成功后，将国家和区号显示在号码上方
                 countryBox.innerText = `归属地：${countryName}`;
-                phoneBox.innerText = data.phone;
+                
+                // === 这里是新增的号码格式化逻辑 ===
+                let displayPhone = data.phone; 
+                
+                if (service === 'dr' && displayPhone.startsWith('1') && displayPhone.length === 11) {
+                    // 如果是美国号码，格式化为 +1 (XXX) XXX-XXXX
+                    const area = displayPhone.substring(1, 4);
+                    const middle = displayPhone.substring(4, 7);
+                    const last = displayPhone.substring(7, 11);
+                    displayPhone = `+1 (${area}) ${middle}-${last}`;
+                } else if (service === 'acz' && displayPhone.startsWith('57')) {
+                    // 如果是哥伦比亚号码，格式化为 +57 XXXXXXXX
+                    displayPhone = `+57 ${displayPhone.substring(2)}`;
+                } else {
+                    // 其他情况保底，加一个 + 号
+                    displayPhone = `+${displayPhone}`;
+                }
+                
+                phoneBox.innerText = displayPhone;
+                // ================================
+
                 currentId = data.id;
                 statusBox.innerText = '号码获取成功！请在APP发送验证码。正在监听...';
                 
