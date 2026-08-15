@@ -27,7 +27,7 @@
     
     <div class="box">
         <div style="font-size: 12px; color: #888;">平台分配的手机号</div>
-        <div class="country-display" id="countryBox"></div>
+        <div class="country-display" id="countryBox">归属地：美国 (+1)</div>
         <div class="phone-display" id="phoneBox">正在分配...</div>
         
         <div class="countdown-display" id="countdownBox"></div>
@@ -62,7 +62,6 @@
 
     async function startTask() {
         try {
-            // 【防苹果缓存】请求带有时间戳
             const res = await fetch(`/api/getNumber?order=${orderId}&t=${Date.now()}`);
             const data = await res.json();
             handleNumberResponse(data);
@@ -73,12 +72,11 @@
 
     function handleNumberResponse(data) {
         if (data.success) {
-            const countryName = data.service === 'dr' ? '归属地：美国 (+1)' : '归属地：哥伦比亚 (+57)';
-            document.getElementById('countryBox').innerText = countryName;
-            
             let displayPhone = String(data.phone); 
-            if (data.service === 'dr' && displayPhone.startsWith('1')) displayPhone = displayPhone.substring(1);
-            else if (data.service === 'acz' && displayPhone.startsWith('57')) displayPhone = displayPhone.substring(2);
+            // 自动去掉所有美国号码开头的 1
+            if (displayPhone.startsWith('1')) {
+                displayPhone = displayPhone.substring(1);
+            }
             
             document.getElementById('phoneBox').innerText = displayPhone;
             
@@ -91,8 +89,6 @@
                 document.getElementById('statusBox').innerText = '正在等待接收验证码... (请在APP中发送)';
                 startCountdown(data.created_at); 
                 if(checkInterval) clearInterval(checkInterval);
-                
-                // 【节省额度】延长为 5 秒查一次
                 checkInterval = setInterval(checkCode, 5000); 
             }
         } else {
@@ -165,7 +161,6 @@
         document.getElementById('statusBox').innerText = '正在与服务器通信为您更换号码...';
 
         try {
-            // 【防缓存】加入随机时间戳
             const res = await fetch(`/api/getNumber?order=${orderId}&change=true&t=${Date.now()}`);
             const data = await res.json();
             
@@ -183,7 +178,6 @@
 
     async function checkCode() {
         try {
-            // 【防缓存】加入随机时间戳
             const res = await fetch(`/api/getCode?order=${orderId}&t=${Date.now()}`);
             const data = await res.json();
 
